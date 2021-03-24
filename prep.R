@@ -248,6 +248,9 @@ axis(1,at=seq(0.6,5.4,length=5),
 ##
 ##################################
 
+# NOTES - Cases averted per person per per year in each zone
+#       - Need to confirm with Arran that I am plotting per year not over 3 years and update this throughout
+
 zone1 = region_eg(index_to_call = 1184,##any value between 1 and 1206 (check!)
                   net_use_to_call = 0.7,
                   irs_to_call = 0.6,## interventions
@@ -285,11 +288,11 @@ zone2 = zone2[order(zone2[, 20]),]
 zone3 = region_eg(index_to_call = 184,##any value between 1 and 1206 (check!)
                   net_use_to_call = 0.4,
                   irs_to_call = 0.6,## interventions
-                  popn = 140506,
+                  popn = 14056,
                   buff = 0.07,
                   procurement = 1.8,##set up 
                   cost_per_N1 = 2,
-                  cost_per_N2 = 2.75,
+                  cost_per_N2 = 2.25,
                   costs_S1 = 5.73,
                   price_NET_delivery = 2.5,
                   price_IRS_delivery = 5,
@@ -304,7 +307,7 @@ zone3 = zone3[order(zone3[, 20]),]
 zone4 = region_eg(index_to_call = 1184,##any value between 1 and 1206 (check!)
                   net_use_to_call = 0.8,
                   irs_to_call = 0.6,## interventions
-                  popn = 140506,
+                  popn = 304567,
                   buff = 0.07,
                   procurement = 1.8,##set up 
                   cost_per_N1 = 2,
@@ -351,7 +354,7 @@ n_interventions <- n_distinct(zone1$intervention)
 budget <- sum(mean(zone1$total_costs),
               mean(zone2$total_costs),
               mean(zone3$total_costs),
-              mean(zone4$total_costs)) * 1.6 #some random budget
+              mean(zone4$total_costs)) * 0.8 #some random budget
 
 data = rbind(zone1,zone2,zone3,zone4)
 data$zone = rep(1:4,each=n_interventions)
@@ -376,8 +379,8 @@ cases_av <- function(zone, intervention) {
 
 # small test that it works
 # of course this could be a simple matrix instead of a function call (again too lazy)
-cost(1, 1)
-cases_av(1, 1)
+# cost(1, 1)
+# cases_av(1, 1)
 
 # There are different ways to formulate that
 # The idea is to have a binary decision variable that models
@@ -405,11 +408,11 @@ res <- model$get_variable_value(y[i, j]) %>%
   left_join(cost_df) %>%
   left_join(select(cases_av_df, total_cases_averted, i, j), by = c("i", "j"))
 
-sum(res$total_costs) <= budget
-sum(res$total_costs)
-sum(res$total_cases_averted)
+# sum(res$total_costs) <= budget
+# sum(res$total_costs)
+# sum(res$total_cases_averted)
 
-res
+# res
 res$cols_int = ifelse(res$intervention == "No intervention","grey",
                       ifelse(res$intervention == "Pyrethroid LLIN only", "blue",
                              ifelse(res$intervention == "Pyrethroid-PBO LLIN only", "aquamarine3",
@@ -429,14 +432,21 @@ optimise_table = data.frame(option = 1,
                             "zone 4" = res$intervention[res$zone == 4],
                             "Total cases averted" = plyr::round_any(sum(res$total_cases_averted),20),
                             "Total cost" = plyr::round_any(sum(res$total_costs),50))
+optimise_table$population = sum(data$population_zone1)
 
 
-res_Table = data.frame("Zone" = res$zone,
-                       "Intervention" = res$intervention,
-                       "Total cases averted" = plyr::round_any(res$total_cases_averted,20),
-                       "Total costs" = plyr::round_any(res$total_costs,50),
-                       "Cost per case averted" = round(res$total_costs/res$total_cases_averted,2))  
-
+res_Table = expand.grid("Zone" = res$zone)
+res_Table$"Intervention" = res$intervention
+res_Table$population = ifelse(res_Table$Zone == 1, zone1$population_zone1[1],
+                              ifelse(res_Table$Zone == 2, zone2$population_zone1[1],
+                                     ifelse(res_Table$Zone == 3, zone3$population_zone1[1],zone4$population_zone1[1])))
+res_Table$"Total cases averted" = plyr::round_any(res$total_cases_averted,20)
+res_Table$"Percentage of cases averted (%)" = round(100*res_Table$"Total cases averted"/sum(res_Table$"Total cases averted"),2)
+res_Table$"Total costs" = plyr::round_any(res$total_costs,50)
+res_Table$"Percentage of total costs (%)" = round(100*plyr::round_any(res$total_costs,50)/sum(plyr::round_any(res$total_costs,50)),2)
+res_Table$"Cost per case averted" = round(res$total_costs/res$total_cases_averted,2)
+res_Table$"Cost per person" = round(res_Table$"Total costs"/res_Table$population,2) 
+res_Table$"cases averted per person" = round(res_Table$"Total cases averted"/res_Table$population,2)
 
 datatable(optimise_table,
           rownames = FALSE,
@@ -478,10 +488,32 @@ datatable(optimise_table,
                                       c("grey", "blue","lightgreen",
                                         "purple","darkred","orange")))
 
-barplot(res$total_cases_averted,
+barplot(res$total_cases_averted ~ res$zone,
         col=res$cols_int,
-        ylim = c(0,max(res$total_cases_averted)),
-        ylab = "Cases averted per zone")
+        main = paste("Total budget constraint USD:",plyr::round_any(budget,100)),
+        ylim = c(0,max(res$total_cases_averted)+0.25*max(res$total_cases_averted)),
+        ylab = "Total cases averted",
+        xlab = "Zone")
+
+
+legend("topright",
+       legend = c("No intervention",
+                  "Pyrethroid LLIN only",
+                  "Pyrethroid-PBO ITN only",
+                  "IRS only",
+                  "Pyrethroid LLIN with IRS",
+                  "Pyrethroid-PBO ITN with IRS"),
+       ncol = 2, col=c("grey", "blue","lightgreen",
+                       "purple","darkred","orange"),pch=15)
+
+res = res[order(res$zone),]
+barplot(res_Table$"cases averted per person" ~ res_Table$Zone,
+        col=res$cols_int,
+        main = paste("Total budget constraint USD:",plyr::round_any(budget,100)),
+        # ylim = c(0,max(res$total_cases_averted)+0.25*max(res$total_cases_averted)),
+        ylab = "Cases averted per person",
+        xlab = "Zone")
+
 
 legend("topright",
        legend = c("No intervention",
@@ -495,7 +527,148 @@ legend("topright",
 
 
 ## And the data for the chosen optimisation 'row' from optimise_table
+res_Table[5,] = c("TOTAL","",
+                  colSums(res_Table[,3:4]),
+                  round(sum(as.numeric(res_Table[,5]))),
+                  sum(as.numeric(res_Table[,6])),
+                  round(sum(as.numeric(res_Table[,7]))),"","","")
+
+res_Table[6,] = c("AVERAGE","",
+                  "","","","","",
+                  round(mean(as.numeric(res_Table[1:4,8])),2),
+                  round(mean(as.numeric(res_Table[1:4,9])),2),
+                  round(mean(as.numeric(res_Table[1:4,10])),2))
 
 datatable(res_Table,
           rownames = FALSE,
           caption = "Table 3. Optimising to minimise cases averted")
+
+
+
+
+
+
+
+
+
+########################################
+##
+## Get the optimizer to maximise option within 10% of total cases averted and 
+## minimizing the cost
+
+##############
+##
+## Add in Dirk Schmacher's optimiser
+
+# Enable this universe
+# options(repos = c(
+#   ropt = 'https://r-opt.r-universe.dev',
+#   CRAN = 'https://cloud.r-project.org'))
+
+# Install some packages
+# install.packages('MOI')
+
+# CRAN packages
+library(ROI.plugin.glpk)
+library(dplyr)
+
+# # install packages from here https://r-opt.r-universe.dev
+# library(devtools)
+# 
+# install_github("r-opt/ROIoptimizer")
+# install_github("r-opt/rmpk")
+
+library(ROIoptimzer)
+library(rmpk)
+
+# create the input parameters for the model
+# hacked together :)
+n_zones <- 4
+n_interventions <- n_distinct(zone1$intervention)
+budget <- sum(mean(zone1$total_costs),
+              mean(zone2$total_costs),
+              mean(zone3$total_costs),
+              mean(zone4$total_costs)) * 0.8 #some random budget
+budget2 = budget*0.59
+
+data = rbind(zone1,zone2,zone3,zone4)
+data$zone = rep(1:4,each=n_interventions)
+
+cost_df <- distinct(data, zone, intervention, total_costs) %>%
+  arrange(intervention, zone) %>%
+  group_by(zone) %>% mutate(j = row_number()) %>%
+  group_by(intervention) %>% mutate(i = row_number()) %>%
+  ungroup()
+cases_av_df <- distinct(data, zone, intervention, total_cases_averted) %>%
+  arrange(intervention, zone) %>%
+  group_by(zone) %>% mutate(j = row_number()) %>%
+  group_by(intervention) %>% mutate(i = row_number()) %>%
+  ungroup()
+
+cost <- function(zone, intervention) {
+  filter(cost_df, i == !!zone, j == !!intervention)$total_costs
+}
+cases_av <- function(zone, intervention) {
+  filter(cases_av_df, i == !!zone, j == !!intervention)$total_cases_averted
+}
+
+# small test that it works
+# of course this could be a simple matrix instead of a function call (again too lazy)
+# cost(1, 1)
+# cases_av(1, 1)
+
+# There are different ways to formulate that
+# The idea is to have a binary decision variable that models
+# if zone i has intervention j. I.e. it is 1 if zone i has intervention j otherwise 0
+
+# create a model with a GLPK as the optimizer
+model <- optimization_model(
+  ROI_optimizer("glpk", control = list(verbose = TRUE)))
+
+# our decision variable, integer with lower bound 0 and upper bound 1
+y <- model$add_variable("y", i = 1:n_zones, j = 1:n_interventions, type = "integer", lb = 0, ub = 1)
+
+# the objective is to maximize cases averted
+model$set_objective(sum_expr(y[i, j] * cases_av(i, j), i = 1:n_zones, j = 1:n_interventions), sense = "max")
+
+# subject to a budget constraint
+model$add_constraint(sum_expr(y[i, j] * cost(i, j), i = 1:n_zones, j = 1:n_interventions) <= budget2)
+
+# Also make sure that each zone gets exactly one intervention
+model$add_constraint(sum_expr(y[i, j], j = 1:n_interventions) == 1, i = 1:n_zones)
+model$optimize()
+
+res2 <- model$get_variable_value(y[i, j]) %>%
+  filter(value == 1) %>%
+  left_join(cost_df) %>%
+  left_join(select(cases_av_df, total_cases_averted, i, j), by = c("i", "j"))
+
+sum(res2$total_costs) <= budget2
+# sum(res2$total_costs)
+sum(res2$total_cases_averted) >= 0.9*sum(res$total_cases_averted)
+
+res2
+
+
+res_Table_function = function(res){
+  
+  res_Table = expand.grid("Zone" = res$zone)
+  res_Table$"Intervention" = res$intervention
+  res_Table$population = ifelse(res_Table$Zone == 1, zone1$population_zone1[1],
+                                ifelse(res_Table$Zone == 2, zone2$population_zone1[1],
+                                       ifelse(res_Table$Zone == 3, zone3$population_zone1[1],zone4$population_zone1[1])))
+  res_Table$"Total cases averted" = plyr::round_any(res$total_cases_averted,20)
+  res_Table$"Percentage of cases averted (%)" = 
+    round(100*res_Table$"Total cases averted"/sum(res_Table$"Total cases averted"),2)
+  res_Table$"Total costs" = plyr::round_any(res$total_costs,50)
+  res_Table$"Percentage of total costs (%)" = 
+    round(100*plyr::round_any(res$total_costs,50)/sum(plyr::round_any(res$total_costs,50)),2)
+  res_Table$"Cost per case averted" = round(res$total_costs/res$total_cases_averted,2)
+  res_Table$"Cost per person" = round(res_Table$"Total costs"/res_Table$population,2) 
+  res_Table$"cases averted per person" = round(res_Table$"Total cases averted"/res_Table$population,2)
+  
+  return(res_Table)
+}
+
+res_Table_function(res)
+res_Table_function(res2)
