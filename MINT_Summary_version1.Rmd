@@ -26,7 +26,7 @@ library(DT)
 # Task - to order the data by strategy cases averted
 # then select those within budget
 
-dat1 = readRDS("data/data_aggregate_Vector_tool_updated_params_uncertainty_alter_20201217.RDS")
+dat1 = readRDS("data/data_aggregate_Vector_tool_updated_params_uncertainty_alter_20201217.rds")
 dim(dat1)
 head(dat1)
 
